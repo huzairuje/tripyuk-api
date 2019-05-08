@@ -2,61 +2,77 @@
 
 namespace App\Http\Controllers\API\Users;
 
-use Illuminate\Http\Request;
+use App\Http\Requests\User\UserLoginRequest;
+use App\Http\Requests\User\UserRegisterRequest;
 use App\Http\Controllers\Controller;
-use App\User;
+use App\Library\ApiBaseResponse;
+use App\Library\UserResponse;
+use App\Services\API\Users\UserService;
 use Illuminate\Support\Facades\Auth;
-use Validator;
+use Symfony\Component\HttpFoundation\Response;
+use Exception;
 
 class UserController extends Controller
 {
-    public $successStatus = 200;
+    protected $apiBaseResponse;
+    protected $userResponse;
+    protected $userService;
+
+    public function __construct(UserService $userService,
+                                ApiBaseResponse $apiBaseResponse,
+                                UserResponse $userResponse)
+    {
+        $this->userService = $userService;
+        $this->apiBaseResponse = $apiBaseResponse;
+        $this->userResponse = $userResponse;
+    }
+
     /**
      * login api
-     *
+     * @param UserLoginRequest $userLoginRequest
      * @return \Illuminate\Http\Response
      */
-    public function login(){
-        if(Auth::attempt(['email' => request('email'), 'password' => request('password')])){
-            $user = Auth::user();
-            $success['token'] =  $user->createToken('MyApp')-> accessToken;
-            return response()->json(['success' => $success], $this-> successStatus);
-        }
-        else{
-            return response()->json(['error'=>'Unauthorised'], 401);
+    public function login(UserLoginRequest $userLoginRequest){
+        try {
+            $credentials = request(['email', 'password']);
+            if(!Auth::attempt($credentials)){
+                $response = $this->userResponse->unauthorizedEmailAndPassword();
+                return response($response, Response::HTTP_UNAUTHORIZED);
+            }
+            $data = $this->userService->login($userLoginRequest);
+            $response = $this->userResponse->singleData($data, []);
+            return response($response, Response::HTTP_OK);
+        } catch (Exception $e) {
+            $response = $this->apiBaseResponse->errorResponse($e);
+            return response($response, Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
+
     /**
      * Register api
-     *
+     * @param UserRegisterRequest $userRegisterRequest
      * @return \Illuminate\Http\Response
      */
-    public function register(Request $request)
+    public function register(UserRegisterRequest $userRegisterRequest)
     {
-        $validator = Validator::make($request->all(), [
-            'name' => 'required',
-            'email' => 'required|email',
-            'password' => 'required',
-            'c_password' => 'required|same:password',
-        ]);
-        if ($validator->fails()) {
-            return response()->json(['error'=>$validator->errors()], 401);
+        try {
+            $data = $this->userService->register($userRegisterRequest);
+            $return = $this->apiBaseResponse->singleData($data, []);
+            return response($return, Response::HTTP_OK);
+        } catch (Exception $e) {
+            $response = $this->apiBaseResponse->errorResponse($e);
+            return response($response, Response::HTTP_INTERNAL_SERVER_ERROR);
         }
-        $input = $request->all();
-        $input['password'] = bcrypt($input['password']);
-        $user = User::create($input);
-        $success['token'] =  $user->createToken('MyApp')-> accessToken;
-        $success['name'] =  $user->name;
-        return response()->json(['success'=>$success], $this-> successStatus);
     }
+
     /**
-     * details api
-     *
+     * details user api
      * @return \Illuminate\Http\Response
      */
     public function details()
     {
         $user = Auth::user();
-        return response()->json(['success' => $user], $this-> successStatus);
+        $response = $this->userResponse->singleData($user, []);
+        return response($response. Response::HTTP_OK);
     }
 }
